@@ -696,6 +696,224 @@ When complete, call finish_task with "final_anthology.md" to signal completion."
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# INTERACTION MODES
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def print_mode_menu():
+    """Display beautiful mode selection menu"""
+    print(f"\n{Colors.BOLD}{Colors.KIMI_PURPLE}{'═' * 80}{Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.HEADER}   SELECT YOUR CREATION MODE{Colors.RESET}")
+    print(f"{Colors.KIMI_PURPLE}{'═' * 80}{Colors.RESET}\n")
+
+    modes = [
+        ("1", "🚀 QUICK START", "Give me a simple prompt and I'll create your anthology"),
+        ("2", "💬 INTERACTIVE", "Let's chat about your story vision first"),
+        ("3", "🌍 WORLD-BUILDER", "Provide detailed character & world-building sheets"),
+    ]
+
+    for num, icon_title, description in modes:
+        print(f"{Colors.BOLD}{Colors.KIMI_CYAN}{num}.{Colors.RESET} {Colors.BOLD}{icon_title}{Colors.RESET}")
+        print(f"{Colors.MUTED}   {description}{Colors.RESET}\n")
+
+    print(f"{Colors.KIMI_PURPLE}{'─' * 80}{Colors.RESET}")
+
+
+def mode_quick_start() -> str:
+    """Mode 1: Simple prompt input"""
+    print(f"\n{Colors.BOLD}{Colors.SUCCESS}🚀 QUICK START MODE{Colors.RESET}")
+    print(f"{Colors.MUTED}{'─' * 80}{Colors.RESET}\n")
+
+    print(f"{Colors.SUBHEADER}What kind of anthology would you like to create?{Colors.RESET}")
+    print(f"{Colors.MUTED}(Press Enter for default: 15-story sci-fi anthology on AI ethics){Colors.RESET}\n")
+
+    user_input = input(f"{Colors.BOLD}Your prompt:{Colors.RESET} ").strip()
+
+    if not user_input:
+        # Default prompt
+        return """Create a complete 15-story sci-fi anthology on AI ethics. Title: "Ghosts in the Machine: Fifteen Futures". Make it publication-ready. Save all files in ./kimi_anthology/. Output final_anthology.md and final_anthology.pdf when done."""
+
+    return f"""Create a complete 15-story anthology based on this prompt: "{user_input}". Make it publication-ready with engaging stories. Save all files in ./kimi_anthology/. Output final_anthology.md when done."""
+
+
+def mode_interactive(client: OpenAI) -> str:
+    """Mode 2: Interactive chat to refine vision"""
+    print(f"\n{Colors.BOLD}{Colors.INFO}💬 INTERACTIVE MODE{Colors.RESET}")
+    print(f"{Colors.MUTED}{'─' * 80}{Colors.RESET}\n")
+
+    print(f"{Colors.SUBHEADER}Let's explore your story vision together!{Colors.RESET}")
+    print(f"{Colors.MUTED}I'll ask you questions to understand what you want to create.{Colors.RESET}")
+    print(f"{Colors.MUTED}Type 'done' when you're ready to start writing.{Colors.RESET}\n")
+
+    # Initial context gathering
+    chat_history = [{
+        "role": "system",
+        "content": """You are a creative writing consultant helping an author plan their 15-story anthology.
+
+Ask thoughtful questions about:
+- Genre and themes
+- Target audience and tone
+- Key messages or ideas to explore
+- Story structure preferences
+- Character types they're interested in
+- World-building elements
+
+Keep responses concise (2-3 sentences). After 3-5 exchanges, summarize their vision and ask if they're ready to begin writing."""
+    }]
+
+    conversation_count = 0
+    max_exchanges = 7
+
+    # Start the conversation
+    initial_question = "What themes or ideas are you most excited to explore in your anthology?"
+    print(f"{Colors.THINKING}💭 Kimi:{Colors.RESET} {initial_question}\n")
+
+    chat_history.append({"role": "assistant", "content": initial_question})
+
+    while conversation_count < max_exchanges:
+        user_response = input(f"{Colors.BOLD}You:{Colors.RESET} ").strip()
+
+        if user_response.lower() in ['done', 'start', 'begin', 'ready']:
+            break
+
+        if not user_response:
+            continue
+
+        chat_history.append({"role": "user", "content": user_response})
+        conversation_count += 1
+
+        # Get AI response
+        animate_loading("Thinking", 0.5)
+
+        response = client.chat.completions.create(
+            model="moonshotai/kimi-k2-thinking",
+            messages=chat_history,
+            temperature=0.8,
+            max_tokens=200
+        )
+
+        ai_message = response.choices[0].message.content
+        chat_history.append({"role": "assistant", "content": ai_message})
+
+        print(f"\n{Colors.THINKING}💭 Kimi:{Colors.RESET} {ai_message}\n")
+
+    # Generate final prompt from conversation
+    print(f"\n{Colors.SUCCESS}✓ Generating your custom anthology plan...{Colors.RESET}\n")
+
+    summary_prompt = [{
+        "role": "system",
+        "content": "Based on the conversation, create a detailed prompt for writing a 15-story anthology. Include: title, themes, tone, story types, and any specific elements discussed. Format as a single paragraph prompt."
+    }]
+    summary_prompt.extend(chat_history[1:])  # Skip system message
+    summary_prompt.append({
+        "role": "user",
+        "content": "Based on our conversation, create a detailed writing prompt for my 15-story anthology. Include all the themes, ideas, and preferences we discussed."
+    })
+
+    summary_response = client.chat.completions.create(
+        model="moonshotai/kimi-k2-thinking",
+        messages=summary_prompt,
+        temperature=0.7,
+        max_tokens=500
+    )
+
+    final_prompt = summary_response.choices[0].message.content
+
+    print(f"{Colors.FILE}📋 Your Anthology Plan:{Colors.RESET}")
+    print(f"{Colors.SUBHEADER}{final_prompt}{Colors.RESET}\n")
+
+    confirm = input(f"{Colors.BOLD}Proceed with this plan? (Y/n):{Colors.RESET} ").strip().lower()
+
+    if confirm and confirm != 'y' and confirm != 'yes':
+        print(f"\n{Colors.WARNING}⚠️  Cancelled. Restart to try again.{Colors.RESET}\n")
+        sys.exit(0)
+
+    return f"""Create a complete 15-story anthology based on this vision: {final_prompt}. Make it publication-ready. Save all files in ./kimi_anthology/. Output final_anthology.md when done."""
+
+
+def mode_world_builder() -> str:
+    """Mode 3: Detailed world-building and character sheets"""
+    print(f"\n{Colors.BOLD}{Colors.KIMI_PURPLE}🌍 WORLD-BUILDER MODE{Colors.RESET}")
+    print(f"{Colors.MUTED}{'─' * 80}{Colors.RESET}\n")
+
+    print(f"{Colors.SUBHEADER}Let's build your world and characters!{Colors.RESET}")
+    print(f"{Colors.MUTED}Provide as much or as little detail as you like. Press Enter to skip any field.{Colors.RESET}\n")
+
+    # World building
+    print(f"{Colors.BOLD}{Colors.FILE}🌎 WORLD BUILDING{Colors.RESET}\n")
+
+    world_name = input(f"{Colors.SUBHEADER}World/Setting Name:{Colors.RESET} ").strip() or "An unnamed world"
+    time_period = input(f"{Colors.SUBHEADER}Time Period/Era:{Colors.RESET} ").strip() or "Future"
+    technology_level = input(f"{Colors.SUBHEADER}Technology Level:{Colors.RESET} ").strip() or "Advanced"
+    society_structure = input(f"{Colors.SUBHEADER}Society/Government:{Colors.RESET} ").strip() or "Varied"
+    key_locations = input(f"{Colors.SUBHEADER}Key Locations:{Colors.RESET} ").strip() or "Various"
+    world_rules = input(f"{Colors.SUBHEADER}Unique Rules/Laws:{Colors.RESET} ").strip() or "Standard"
+    conflicts = input(f"{Colors.SUBHEADER}Major Conflicts/Tensions:{Colors.RESET} ").strip() or "To be explored"
+
+    # Character building
+    print(f"\n{Colors.BOLD}{Colors.FILE}👥 CHARACTER ARCHETYPES{Colors.RESET}")
+    print(f"{Colors.MUTED}(Describe character types you want to see, not specific individuals){Colors.RESET}\n")
+
+    protagonists = input(f"{Colors.SUBHEADER}Protagonist Types:{Colors.RESET} ").strip() or "Diverse perspectives"
+    antagonists = input(f"{Colors.SUBHEADER}Antagonist Types:{Colors.RESET} ").strip() or "Morally complex"
+    supporting = input(f"{Colors.SUBHEADER}Supporting Characters:{Colors.RESET} ").strip() or "Varied roles"
+
+    # Themes
+    print(f"\n{Colors.BOLD}{Colors.FILE}🎭 THEMES & TONE{Colors.RESET}\n")
+
+    themes = input(f"{Colors.SUBHEADER}Core Themes:{Colors.RESET} ").strip() or "Human nature, morality, change"
+    tone = input(f"{Colors.SUBHEADER}Overall Tone:{Colors.RESET} ").strip() or "Thoughtful, engaging"
+    message = input(f"{Colors.SUBHEADER}Message/Takeaway:{Colors.RESET} ").strip() or "Open to interpretation"
+
+    # Story structure preferences
+    print(f"\n{Colors.BOLD}{Colors.FILE}📖 STORY PREFERENCES{Colors.RESET}\n")
+
+    story_style = input(f"{Colors.SUBHEADER}Story Style:{Colors.RESET} ").strip() or "Varied"
+    interconnection = input(f"{Colors.SUBHEADER}How stories connect:{Colors.RESET} ").strip() or "Thematically linked"
+
+    # Compile into rich prompt
+    world_building_prompt = f"""
+Create a 15-story anthology set in the following world:
+
+WORLD BUILDING:
+- Setting: {world_name}
+- Time Period: {time_period}
+- Technology: {technology_level}
+- Society: {society_structure}
+- Key Locations: {key_locations}
+- Unique Rules: {world_rules}
+- Conflicts: {conflicts}
+
+CHARACTERS:
+- Protagonists: {protagonists}
+- Antagonists: {antagonists}
+- Supporting Cast: {supporting}
+
+THEMES & TONE:
+- Core Themes: {themes}
+- Tone: {tone}
+- Message: {message}
+
+STRUCTURE:
+- Story Style: {story_style}
+- Interconnection: {interconnection}
+
+Create 15 interconnected stories that explore this world from different angles. Make each story publication-ready with rich detail, compelling characters, and meaningful themes. Save all files in ./kimi_anthology/. Output final_anthology.md when done.
+"""
+
+    print(f"\n{Colors.SUCCESS}✓ World-building complete!{Colors.RESET}\n")
+    print(f"{Colors.FILE}📋 Your World Overview:{Colors.RESET}")
+    print(f"{Colors.MUTED}{world_building_prompt[:300]}...{Colors.RESET}\n")
+
+    confirm = input(f"{Colors.BOLD}Begin creating your anthology? (Y/n):{Colors.RESET} ").strip().lower()
+
+    if confirm and confirm != 'y' and confirm != 'yes':
+        print(f"\n{Colors.WARNING}⚠️  Cancelled. Restart to try again.{Colors.RESET}\n")
+        sys.exit(0)
+
+    return world_building_prompt
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # MAIN ENTRY POINT
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -726,10 +944,29 @@ def main():
 
         print(f"\n{Colors.SUCCESS}✓ API key received{Colors.RESET}")
 
-    # User message
-    user_message = """Create a complete 15-story sci-fi anthology on AI ethics. Title: "Ghosts in the Machine: Fifteen Futures". Make it publication-ready. Save all files in ./kimi_anthology/. Output final_anthology.md and final_anthology.pdf when done."""
+    # Create OpenAI client for interactive mode
+    client = OpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=api_key
+    )
 
-    # Launch
+    # Show mode selection menu
+    print_mode_menu()
+
+    mode_choice = input(f"\n{Colors.BOLD}Select mode (1-3):{Colors.RESET} ").strip()
+
+    # Route to appropriate mode
+    if mode_choice == '1':
+        user_message = mode_quick_start()
+    elif mode_choice == '2':
+        user_message = mode_interactive(client)
+    elif mode_choice == '3':
+        user_message = mode_world_builder()
+    else:
+        print(f"\n{Colors.ERROR}❌ Invalid choice. Using Quick Start mode.{Colors.RESET}")
+        user_message = mode_quick_start()
+
+    # Launch anthology generation
     agent = KimiWriter(api_key)
     agent.run(user_message)
 

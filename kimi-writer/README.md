@@ -12,8 +12,9 @@
 ## ✨ Features
 
 - 🤖 **Powered by Kimi-k2-thinking** - State-of-the-art agentic reasoning with 256k context
-- 📚 **Complete Anthologies** - Generates 15 interconnected sci-fi stories exploring AI ethics
+- 📚 **Complete Anthologies** - Generates 15 interconnected stories in any genre
 - 🎨 **Beautiful Terminal UI** - Premium color scheme and real-time progress visualization
+- 🎯 **Three Creation Modes** - Quick start, interactive chat, or detailed world-building
 - 🔧 **300+ Tool Calls** - Incremental, iterative writing for maximum quality
 - 📝 **Auto-Preview** - Opens Markdown files in Preview.app (macOS) after each write
 - 💾 **Smart Compilation** - Automatic TOC generation and anthology formatting
@@ -45,6 +46,44 @@ python kimi-writer.py
 ```env
 OPENROUTER_API_KEY=your-key-here
 ```
+
+---
+
+## 🎯 Three Creation Modes
+
+Choose how you want to create your anthology:
+
+### 1. 🚀 Quick Start
+Perfect for: Getting started fast with minimal input
+
+Simply provide a prompt (or use the default AI ethics anthology) and let Kimi-Writer handle everything.
+
+```
+Your prompt: "A cyberpunk anthology about memory trading"
+```
+
+### 2. 💬 Interactive Chat
+Perfect for: Exploring ideas collaboratively
+
+Have a conversation with Kimi about your vision. It will ask thoughtful questions about:
+- Themes and genres you want to explore
+- Target audience and tone
+- Story structure preferences
+- Character archetypes
+- Key messages
+
+After 3-5 exchanges, Kimi generates a custom plan based on your conversation.
+
+### 3. 🌍 World-Builder
+Perfect for: Authors with detailed worlds already planned
+
+Provide comprehensive details through an interactive form:
+- **World Building**: Setting name, time period, technology, society, locations, unique rules
+- **Character Archetypes**: Protagonist types, antagonists, supporting cast
+- **Themes & Tone**: Core themes, overall tone, message/takeaway
+- **Story Preferences**: Writing style, how stories interconnect
+
+Kimi will use your world-building sheet to craft 15 stories set in your universe.
 
 ---
 
