@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Inference Calculator - Find Your Perfect Hardware</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="background">
+        <div class="gradient-orb orb-1"></div>
+        <div class="gradient-orb orb-2"></div>
+        <div class="gradient-orb orb-3"></div>
+    </div>
+
+    <div class="container">
+        <header class="header">
+            <div class="logo">
+                <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect width="40" height="40" rx="12" fill="url(#gradient)"/>
+                    <path d="M20 10L26 16L20 22L14 16L20 10Z" fill="white" opacity="0.9"/>
+                    <path d="M20 18L26 24L20 30L14 24L20 18Z" fill="white" opacity="0.6"/>
+                    <defs>
+                        <linearGradient id="gradient" x1="0" y1="0" x2="40" y2="40">
+                            <stop offset="0%" stop-color="#667eea"/>
+                            <stop offset="100%" stop-color="#764ba2"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <h1>Inference Calculator</h1>
+            </div>
+            <p class="tagline">Find the perfect hardware for your AI models</p>
+        </header>
+
+        <main class="main">
+            <div class="card model-selector-card">
+                <div class="card-header">
+                    <h2>Select Your Model</h2>
+                    <div class="model-count" id="modelCount">
+                        <div class="loading-dot"></div>
+                        Loading models...
+                    </div>
+                </div>
+
+                <div class="search-wrapper">
+                    <svg class="search-icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
+                        <path d="M9 17A8 8 0 1 0 9 1a8 8 0 0 0 0 16zM19 19l-4.35-4.35" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                    <input
+                        type="text"
+                        id="modelSearch"
+                        class="search-input"
+                        placeholder="Search models by name or organization... (⌘K)"
+                    >
+                </div>
+
+                <div class="select-wrapper">
+                    <select id="modelSelect" class="model-select">
+                        <option value="">Loading models...</option>
+                    </select>
+                    <svg class="select-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                        <path d="M1 1.5L6 6.5L11 1.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                </div>
+            </div>
+
+            <div class="specs-container" id="specsContainer">
+                <div class="empty-state">
+                    <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+                        <circle cx="40" cy="40" r="38" stroke="url(#emptyGradient)" stroke-width="2" opacity="0.3"/>
+                        <path d="M40 20v20m0 0v20m0-20h20m-20 0H20" stroke="url(#emptyGradient)" stroke-width="2" stroke-linecap="round" opacity="0.3"/>
+                        <defs>
+                            <linearGradient id="emptyGradient" x1="0" y1="0" x2="80" y2="80">
+                                <stop offset="0%" stop-color="#667eea"/>
+                                <stop offset="100%" stop-color="#764ba2"/>
+                            </linearGradient>
+                        </defs>
+                    </svg>
+                    <h3>Select a model to begin</h3>
+                    <p>Choose from thousands of AI models to see their specifications</p>
+                </div>
+            </div>
+
+            <div class="action-section" id="actionSection" style="display: none;">
+                <button class="cta-button" id="findHardwareBtn">
+                    <span class="button-content">
+                        <svg class="button-icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
+                            <path d="M10 1v18M19 10H1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            <circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="2" opacity="0.3"/>
+                        </svg>
+                        Find Perfect Hardware
+                    </span>
+                    <div class="button-shimmer"></div>
+                </button>
+                <p class="cta-subtitle">AI-powered hardware recommendations in seconds</p>
+            </div>
+
+            <div class="results-section" id="resultsSection" style="display: none;">
+                <div class="card results-card">
+                    <div class="card-header">
+                        <h2>Hardware Recommendations</h2>
+                        <div class="research-badge">
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                                <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5"/>
+                                <path d="M8 5v3l2 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                            </svg>
+                            Researched by Claude
+                        </div>
+                    </div>
+                    <div id="resultsContent" class="results-content"></div>
+                </div>
+            </div>
+        </main>
+
+        <footer class="footer">
+            <p>Powered by Anthropic Claude & HuggingFace</p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
