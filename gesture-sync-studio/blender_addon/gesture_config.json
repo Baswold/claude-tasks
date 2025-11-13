@@ -1,0 +1,38 @@
+{
+  "bone_mapping": {
+    "head": "Head",
+    "neck": "Neck",
+    "spine": "Spine",
+    "spine.001": "Spine.001",
+    "spine.002": "Spine.002",
+    "shoulder.L": "shoulder.L",
+    "shoulder.R": "shoulder.R",
+    "upper_arm.L": "upper_arm.L",
+    "upper_arm.R": "upper_arm.R",
+    "forearm.L": "forearm.L",
+    "forearm.R": "forearm.R",
+    "hand.L": "hand.L",
+    "hand.R": "hand.R"
+  },
+  "animation_settings": {
+    "fps": 24,
+    "smoothing": 0.5,
+    "gesture_intensity": 1.0,
+    "idle_motion_scale": 0.3,
+    "emphasis_scale": 1.5,
+    "breathing_rate": 0.2
+  },
+  "audio_processing": {
+    "sample_rate": 22050,
+    "frame_length": 2048,
+    "hop_length": 512,
+    "n_mfcc": 13,
+    "energy_threshold": 0.02,
+    "emphasis_percentile": 85.0
+  },
+  "gesture_thresholds": {
+    "head_nod_threshold": 0.7,
+    "hand_gesture_threshold": 0.6,
+    "arm_movement_threshold": 0.5
+  }
+}

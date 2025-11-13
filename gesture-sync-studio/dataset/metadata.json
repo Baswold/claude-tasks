@@ -1,0 +1,44 @@
+{
+  "dataset_info": {
+    "name": "Gesture Sync Dataset",
+    "version": "1.0.0",
+    "description": "Audio-gesture paired dataset for training gesture generation models",
+    "created": "2025-01-01",
+    "fps": 24,
+    "audio_format": "wav",
+    "motion_format": "json"
+  },
+  "samples": [
+    {
+      "id": "example_001",
+      "audio": "example_001.wav",
+      "motion": "example_001.json",
+      "duration": 10.0,
+      "speaker": "speaker_a",
+      "style": "conversational",
+      "description": "Example conversational speech with sitting gestures"
+    }
+  ],
+  "statistics": {
+    "total_samples": 0,
+    "total_duration": 0,
+    "avg_duration": 0,
+    "speakers": [],
+    "styles": ["conversational", "presentation", "excited", "calm"]
+  },
+  "bone_list": [
+    "head",
+    "neck",
+    "spine",
+    "spine.001",
+    "spine.002",
+    "shoulder.L",
+    "shoulder.R",
+    "upper_arm.L",
+    "upper_arm.R",
+    "forearm.L",
+    "forearm.R",
+    "hand.L",
+    "hand.R"
+  ]
+}
