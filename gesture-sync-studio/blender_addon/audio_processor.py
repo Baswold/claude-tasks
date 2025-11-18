@@ -4,6 +4,7 @@ Extracts features from audio files for gesture synthesis.
 """
 
 import numpy as np
+import os
 from typing import Dict, List, Tuple, Optional
 import logging
 
@@ -21,7 +22,8 @@ except ImportError:
 class AudioProcessor:
     """Analyzes audio files and extracts features for gesture generation."""
 
-    def __init__(self, sr: int = 22050, frame_length: int = 2048, hop_length: int = 512):
+    def __init__(self, sr: int = 22050, frame_length: int = 2048, hop_length: int = 512,
+                 enable_cache: bool = True, cache_dir: Optional[str] = None):
         """
         Initialize audio processor.
 
@@ -29,10 +31,26 @@ class AudioProcessor:
             sr: Sample rate for audio processing
             frame_length: Length of each analysis frame
             hop_length: Number of samples between frames
+            enable_cache: Enable feature caching for performance
+            cache_dir: Directory for cache files (None = in-memory only)
         """
         self.sr = sr
         self.frame_length = frame_length
         self.hop_length = hop_length
+        self.enable_cache = enable_cache
+
+        # Initialize cache if enabled
+        if self.enable_cache:
+            try:
+                from performance_cache import get_feature_cache
+                self.feature_cache = get_feature_cache(cache_dir=cache_dir)
+                logger.debug("Feature caching enabled")
+            except ImportError:
+                logger.warning("performance_cache module not available, caching disabled")
+                self.enable_cache = False
+                self.feature_cache = None
+        else:
+            self.feature_cache = None
 
     def load_audio(self, filepath: str) -> Tuple[np.ndarray, int]:
         """
@@ -43,19 +61,77 @@ class AudioProcessor:
 
         Returns:
             Tuple of (waveform, sample_rate)
+
+        Raises:
+            ImportError: If librosa is not available
+            FileNotFoundError: If audio file doesn't exist
+            ValueError: If audio file is invalid or corrupted
         """
         if not LIBROSA_AVAILABLE:
-            raise ImportError("librosa is required for audio loading. Install with: pip install librosa")
+            raise ImportError(
+                "librosa is required for audio loading. "
+                "Install with: pip install librosa"
+            )
+
+        # Validate file exists
+        if not os.path.exists(filepath):
+            raise FileNotFoundError(f"Audio file not found: {filepath}")
+
+        # Check file size
+        file_size = os.path.getsize(filepath)
+        if file_size == 0:
+            raise ValueError(f"Audio file is empty: {filepath}")
+
+        if file_size > 500 * 1024 * 1024:  # 500 MB
+            logger.warning(
+                f"Very large audio file ({file_size / 1024 / 1024:.1f} MB). "
+                "Processing may take a long time."
+            )
+
+        # Validate file extension
+        valid_extensions = ['.wav', '.mp3', '.flac', '.ogg', '.m4a', '.aac']
+        ext = os.path.splitext(filepath)[1].lower()
+        if ext not in valid_extensions:
+            logger.warning(
+                f"Unusual audio format: {ext}. "
+                f"Supported formats: {valid_extensions}"
+            )
 
         try:
+            logger.debug(f"Loading audio from {filepath} ({file_size / 1024:.1f} KB)")
             waveform, sr = librosa.load(filepath, sr=self.sr, mono=True)
-            logger.info(f"Loaded audio: {filepath}, duration: {len(waveform)/sr:.2f}s")
-            return waveform, sr
-        except Exception as e:
-            logger.error(f"Failed to load audio file {filepath}: {e}")
-            raise
 
-    def extract_features(self, waveform: np.ndarray, sr: int) -> Dict[str, np.ndarray]:
+            # Validate loaded audio
+            if len(waveform) == 0:
+                raise ValueError("Loaded audio has zero length")
+
+            if np.isnan(waveform).any():
+                raise ValueError("Loaded audio contains NaN values")
+
+            if np.isinf(waveform).any():
+                raise ValueError("Loaded audio contains infinite values")
+
+            duration = len(waveform) / sr
+            logger.info(
+                f"Loaded audio: {filepath}, duration: {duration:.2f}s, "
+                f"sample rate: {sr} Hz, samples: {len(waveform)}"
+            )
+
+            # Warn if audio is very quiet or very loud
+            rms = np.sqrt(np.mean(waveform ** 2))
+            if rms < 0.001:
+                logger.warning("Audio is very quiet (low RMS). Gestures may be minimal.")
+            elif rms > 0.9:
+                logger.warning("Audio is very loud. Consider normalizing to prevent clipping.")
+
+            return waveform, sr
+
+        except Exception as e:
+            logger.error(f"Failed to load audio file {filepath}: {e}", exc_info=True)
+            raise RuntimeError(f"Failed to load audio file: {e}")
+
+    def extract_features(self, waveform: np.ndarray, sr: int,
+                        filepath: Optional[str] = None) -> Dict[str, np.ndarray]:
         """
         Extract relevant features from audio waveform.
 
@@ -69,13 +145,45 @@ class AudioProcessor:
         Args:
             waveform: Audio waveform as numpy array
             sr: Sample rate
+            filepath: Optional file path for caching
 
         Returns:
             Dictionary with frame-by-frame features
         """
-        if not LIBROSA_AVAILABLE:
-            return self._extract_features_fallback(waveform, sr)
+        # Check cache if enabled and filepath provided
+        if self.enable_cache and filepath and self.feature_cache:
+            cache_params = {
+                'sr': self.sr,
+                'frame_length': self.frame_length,
+                'hop_length': self.hop_length
+            }
+            cached = self.feature_cache.get(filepath, cache_params)
+            if cached is not None:
+                logger.debug(f"Using cached features for {filepath}")
+                return cached
 
+        if not LIBROSA_AVAILABLE:
+            features = self._extract_features_fallback(waveform, sr)
+        else:
+            features = self._extract_features_librosa(waveform, sr)
+
+        # Cache the result if enabled
+        if self.enable_cache and filepath and self.feature_cache:
+            self.feature_cache.put(filepath, cache_params, features)
+
+        return features
+
+    def _extract_features_librosa(self, waveform: np.ndarray, sr: int) -> Dict[str, np.ndarray]:
+        """
+        Extract features using librosa (internal method).
+
+        Args:
+            waveform: Audio waveform
+            sr: Sample rate
+
+        Returns:
+            Feature dictionary
+        """
         features = {}
 
         try:

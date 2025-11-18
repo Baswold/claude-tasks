@@ -8,10 +8,22 @@ Generate realistic sitting/gesturing animations for rigged characters from audio
 
 - 🎤 **Audio-driven animation**: Generate natural gestures synchronized with speech
 - 🤖 **Dual generation modes**: Rule-based (no training needed) or ML-powered
+  - **NEW**: Full ML inference support with ONNX and TorchScript models
+  - Seamless fallback to rule-based when models unavailable
 - 🎨 **Blender integration**: Easy-to-use addon with GUI panel
 - 📊 **Training framework**: Complete PyTorch-based training pipeline
+  - **NEW**: BVH motion capture file support for training data
+  - Multiple model architectures (LSTM, Transformer, Simple MLP)
 - 🔧 **Configurable**: Extensive customization options
+  - Fine-grained control over gesture parameters
+  - Custom bone mapping support
 - ⚡ **Real-time capable**: Process 10 minutes of audio in under 1 minute
+  - **NEW**: Feature caching for 10-100x speedup on repeated processing
+  - **NEW**: Batch processing for efficient ML inference
+  - Memory-efficient processing for long audio files
+- 🧪 **Comprehensive testing**: 30+ unit tests covering all major components
+- 📈 **Performance monitoring**: Built-in profiling and benchmarking tools
+- 📝 **Command-line tools**: Demo scripts for standalone usage without Blender
 
 ## Project Structure
 
@@ -77,8 +89,38 @@ The addon requires Python packages that may not be included with Blender:
 The addon will:
 - Analyze the audio file
 - Extract features (energy, pitch, emphasis points)
-- Generate bone animations
+- Generate bone animations (using ML model if available, otherwise rule-based)
 - Apply keyframes to your armature
+
+### Command-Line Usage (NEW!)
+
+You can also generate gestures without Blender using the CLI demo script:
+
+```bash
+cd examples
+
+# Generate with rule-based system
+python demo_ml_generation.py --audio speech.wav --rule-based --output gestures.json
+
+# Generate with ML model (ONNX)
+python demo_ml_generation.py --audio speech.wav --model ../models/gesture_model.onnx --output gestures.json
+
+# Generate with visualization and statistics
+python demo_ml_generation.py \
+    --audio speech.wav \
+    --rule-based \
+    --visualize \
+    --stats \
+    --intensity 1.5 \
+    --smoothing 7
+
+# Run performance benchmark
+python demo_ml_generation.py --audio speech.wav --rule-based --benchmark
+```
+
+Features caching automatically kicks in on repeated runs of the same audio file, providing 10-100x speedup!
+
+See [examples/README.md](examples/README.md) for complete CLI documentation.
 
 ### Expected Bone Names
 

@@ -50,33 +50,78 @@ class GestureGenerator:
 
         Args:
             model_path: Path to model file
+
+        Raises:
+            FileNotFoundError: If model file doesn't exist
+            ValueError: If model format is unsupported
         """
+        if not os.path.exists(model_path):
+            logger.error(f"Model file not found: {model_path}")
+            raise FileNotFoundError(f"Model file not found: {model_path}")
+
+        file_size = os.path.getsize(model_path)
+        if file_size == 0:
+            logger.error(f"Model file is empty: {model_path}")
+            raise ValueError(f"Model file is empty: {model_path}")
+
+        logger.info(f"Loading model from {model_path} ({file_size / 1024 / 1024:.2f} MB)")
+
         try:
             # Try ONNX first
             if model_path.endswith('.onnx'):
-                import onnxruntime as ort
-                self.model = ort.InferenceSession(model_path)
+                try:
+                    import onnxruntime as ort
+                except ImportError:
+                    raise ImportError(
+                        "onnxruntime is required to load ONNX models. "
+                        "Install with: pip install onnxruntime"
+                    )
+
+                # Set session options for better performance
+                sess_options = ort.SessionOptions()
+                sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+
+                self.model = ort.InferenceSession(model_path, sess_options)
                 self.model_type = 'onnx'
-                logger.info(f"Loaded ONNX model from {model_path}")
+
+                # Validate model inputs/outputs
+                input_info = self.model.get_inputs()[0]
+                output_info = self.model.get_outputs()[0]
+                logger.info(
+                    f"Loaded ONNX model - Input: {input_info.name} {input_info.shape}, "
+                    f"Output: {output_info.name} {output_info.shape}"
+                )
 
             # Try TorchScript
             elif model_path.endswith('.pt') or model_path.endswith('.pth'):
-                import torch
-                self.model = torch.jit.load(model_path)
+                try:
+                    import torch
+                except ImportError:
+                    raise ImportError(
+                        "PyTorch is required to load TorchScript models. "
+                        "Install with: pip install torch"
+                    )
+
+                self.model = torch.jit.load(model_path, map_location='cpu')
                 self.model.eval()
                 self.model_type = 'torch'
                 logger.info(f"Loaded TorchScript model from {model_path}")
 
             else:
-                logger.warning(f"Unknown model format: {model_path}")
-                self.model = None
+                supported_formats = ['.onnx', '.pt', '.pth']
+                raise ValueError(
+                    f"Unsupported model format: {model_path}. "
+                    f"Supported formats: {supported_formats}"
+                )
 
         except ImportError as e:
-            logger.warning(f"Could not load model (missing dependencies): {e}")
+            logger.error(f"Missing dependencies for model loading: {e}")
             self.model = None
+            raise
         except Exception as e:
-            logger.error(f"Failed to load model: {e}")
+            logger.error(f"Failed to load model: {e}", exc_info=True)
             self.model = None
+            raise RuntimeError(f"Failed to load model from {model_path}: {e}")
 
     def generate_gesture_sequence(self, audio_features: Dict[str, np.ndarray],
                                   fps: int = 24,
@@ -86,7 +131,7 @@ class GestureGenerator:
 
         Args:
             audio_features: Dictionary of audio features from AudioProcessor
-            fps: Target frames per second
+            fps: Target frames per second (must be > 0, typically 24, 30, or 60)
             bone_names: List of bone names to animate (None = use defaults)
 
         Returns:
@@ -99,7 +144,52 @@ class GestureGenerator:
                     }
                 }
             }
+
+        Raises:
+            ValueError: If audio_features is invalid or fps is invalid
+            TypeError: If inputs have wrong types
         """
+        # Validate inputs
+        if not isinstance(audio_features, dict):
+            raise TypeError(f"audio_features must be a dict, got {type(audio_features)}")
+
+        if not isinstance(fps, int) or fps <= 0:
+            raise ValueError(f"fps must be a positive integer, got {fps}")
+
+        if fps > 240:
+            logger.warning(f"Very high FPS requested ({fps}). This may cause performance issues.")
+
+        if bone_names is not None:
+            if not isinstance(bone_names, list):
+                raise TypeError(f"bone_names must be a list or None, got {type(bone_names)}")
+            if len(bone_names) == 0:
+                raise ValueError("bone_names list cannot be empty")
+            if len(bone_names) > 100:
+                logger.warning(f"Very large number of bones requested ({len(bone_names)})")
+
+        # Validate audio features
+        if 'rms' not in audio_features or 'times' not in audio_features:
+            raise ValueError("audio_features must contain at least 'rms' and 'times' keys")
+
+        rms = audio_features.get('rms', np.array([]))
+        times = audio_features.get('times', np.array([]))
+
+        if len(rms) == 0 or len(times) == 0:
+            raise ValueError("audio_features 'rms' and 'times' cannot be empty")
+
+        if len(rms) != len(times):
+            raise ValueError(
+                f"audio_features 'rms' and 'times' must have same length, "
+                f"got rms={len(rms)}, times={len(times)}"
+            )
+
+        duration = times[-1] - times[0] if len(times) > 1 else 0
+        logger.debug(
+            f"Generating gestures: {len(rms)} feature frames, "
+            f"{duration:.2f}s duration, {fps} FPS target"
+        )
+
+        # Choose generation method
         if self.model is not None:
             logger.info("Using ML model for gesture generation")
             return self._ml_generation(audio_features, fps, bone_names)
@@ -121,10 +211,227 @@ class GestureGenerator:
         Returns:
             Gesture dictionary
         """
-        # TODO: Implement ML inference
-        # For now, fall back to rule-based
-        logger.warning("ML generation not yet implemented, falling back to rule-based")
-        return self.rule_based_generation(audio_features, fps, bone_names)
+        if self.model is None:
+            logger.error("ML model not loaded")
+            return self.rule_based_generation(audio_features, fps, bone_names)
+
+        try:
+            # Use default bone names if not specified
+            if bone_names is None:
+                bone_names = ['head', 'neck', 'spine', 'spine.001', 'spine.002',
+                             'shoulder.L', 'shoulder.R', 'upper_arm.L', 'upper_arm.R',
+                             'forearm.L', 'forearm.R', 'hand.L', 'hand.R']
+
+            # Prepare input features
+            input_features = self._prepare_ml_input(audio_features)
+
+            # Run inference based on model type
+            if self.model_type == 'onnx':
+                predictions = self._run_onnx_inference(input_features)
+            elif self.model_type == 'torch':
+                predictions = self._run_torch_inference(input_features)
+            else:
+                logger.error(f"Unknown model type: {self.model_type}")
+                return self.rule_based_generation(audio_features, fps, bone_names)
+
+            # Convert predictions to gesture dictionary
+            gestures = self._predictions_to_gestures(predictions, bone_names)
+
+            # Apply smoothing for better quality
+            gestures = self.smooth_gesture_sequence(gestures, window_size=5)
+
+            logger.info(f"Generated {len(predictions)} frames using ML model for {len(bone_names)} bones")
+            return gestures
+
+        except Exception as e:
+            logger.error(f"ML inference failed: {e}", exc_info=True)
+            logger.warning("Falling back to rule-based generation")
+            return self.rule_based_generation(audio_features, fps, bone_names)
+
+    def _prepare_ml_input(self, audio_features: Dict[str, np.ndarray]) -> np.ndarray:
+        """
+        Prepare audio features for ML model input.
+
+        Combines all audio features into a single array compatible with model input.
+
+        Args:
+            audio_features: Dictionary of audio features
+
+        Returns:
+            Feature array of shape (time_steps, feature_dim)
+        """
+        # Extract features - handle both formats
+        rms = audio_features.get('rms', np.array([]))
+        zcr = audio_features.get('zcr', np.array([]))
+        spectral_centroid = audio_features.get('spectral_centroid', np.array([]))
+        mfcc = audio_features.get('mfcc', np.array([]))
+        onset_strength = audio_features.get('onset_strength', np.array([]))
+
+        if len(rms) == 0:
+            raise ValueError("No RMS features found in audio_features")
+
+        num_frames = len(rms)
+
+        # Build feature list
+        feature_list = []
+
+        # Add scalar features
+        if len(rms) > 0:
+            feature_list.append(rms.reshape(-1, 1))
+        if len(zcr) > 0 and len(zcr) == num_frames:
+            feature_list.append(zcr.reshape(-1, 1))
+        if len(spectral_centroid) > 0 and len(spectral_centroid) == num_frames:
+            feature_list.append(spectral_centroid.reshape(-1, 1))
+        if len(onset_strength) > 0 and len(onset_strength) == num_frames:
+            feature_list.append(onset_strength.reshape(-1, 1))
+
+        # Add MFCC features (transpose if needed)
+        if len(mfcc) > 0:
+            if mfcc.ndim == 2:
+                # MFCC is (n_mfcc, time_steps), transpose to (time_steps, n_mfcc)
+                if mfcc.shape[1] == num_frames:
+                    feature_list.append(mfcc.T)
+                elif mfcc.shape[0] == num_frames:
+                    feature_list.append(mfcc)
+
+        # Concatenate all features
+        if len(feature_list) == 0:
+            raise ValueError("No valid features to prepare for ML input")
+
+        features = np.concatenate(feature_list, axis=1)
+
+        # Normalize features (z-score normalization)
+        features = self._normalize_features(features)
+
+        logger.debug(f"Prepared ML input: shape {features.shape}")
+        return features
+
+    def _normalize_features(self, features: np.ndarray) -> np.ndarray:
+        """
+        Normalize features using z-score normalization.
+
+        Args:
+            features: Feature array (time_steps, feature_dim)
+
+        Returns:
+            Normalized features
+        """
+        mean = np.mean(features, axis=0, keepdims=True)
+        std = np.std(features, axis=0, keepdims=True) + 1e-8
+        return (features - mean) / std
+
+    def _run_onnx_inference(self, input_features: np.ndarray) -> np.ndarray:
+        """
+        Run inference using ONNX model.
+
+        Args:
+            input_features: Input feature array (time_steps, feature_dim)
+
+        Returns:
+            Predictions array (time_steps, output_dim)
+        """
+        import onnxruntime as ort
+
+        # ONNX expects batch dimension: (batch, time_steps, features)
+        input_batch = input_features[np.newaxis, :, :].astype(np.float32)
+
+        # Get input name from model
+        input_name = self.model.get_inputs()[0].name
+
+        # Run inference
+        outputs = self.model.run(None, {input_name: input_batch})
+
+        # Remove batch dimension
+        predictions = outputs[0][0]  # (time_steps, output_dim)
+
+        logger.debug(f"ONNX inference output shape: {predictions.shape}")
+        return predictions
+
+    def _run_torch_inference(self, input_features: np.ndarray) -> np.ndarray:
+        """
+        Run inference using TorchScript model.
+
+        Args:
+            input_features: Input feature array (time_steps, feature_dim)
+
+        Returns:
+            Predictions array (time_steps, output_dim)
+        """
+        import torch
+
+        # Convert to torch tensor with batch dimension
+        input_tensor = torch.from_numpy(input_features).float().unsqueeze(0)
+
+        # Run inference
+        with torch.no_grad():
+            output_tensor = self.model(input_tensor)
+
+        # Convert back to numpy and remove batch dimension
+        predictions = output_tensor.squeeze(0).cpu().numpy()
+
+        logger.debug(f"Torch inference output shape: {predictions.shape}")
+        return predictions
+
+    def _predictions_to_gestures(self, predictions: np.ndarray,
+                                 bone_names: List[str]) -> Dict[str, Dict[int, Dict]]:
+        """
+        Convert model predictions to gesture dictionary format.
+
+        Args:
+            predictions: Model output (time_steps, output_dim)
+                        Expected format: flat array of [bone0_quat(4) + bone0_loc(3), bone1_quat(4) + bone1_loc(3), ...]
+            bone_names: List of bone names
+
+        Returns:
+            Gesture dictionary in standard format
+        """
+        num_frames = predictions.shape[0]
+        output_dim = predictions.shape[1]
+
+        # Calculate expected dimension (7 DOF per bone: 4 quaternion + 3 location)
+        expected_dim = len(bone_names) * 7
+
+        if output_dim != expected_dim:
+            logger.warning(f"Output dimension mismatch: expected {expected_dim}, got {output_dim}")
+            # Adjust bone_names or pad predictions as needed
+            if output_dim < expected_dim:
+                # Fewer outputs than expected - use fewer bones
+                num_bones = output_dim // 7
+                bone_names = bone_names[:num_bones]
+            elif output_dim > expected_dim:
+                # More outputs than expected - pad predictions
+                padding = np.zeros((num_frames, expected_dim - output_dim))
+                predictions = np.concatenate([predictions, padding], axis=1)
+
+        # Build gesture dictionary
+        gestures = {bone: {} for bone in bone_names}
+
+        for frame_idx in range(num_frames):
+            frame_data = predictions[frame_idx]
+
+            for bone_idx, bone_name in enumerate(bone_names):
+                # Extract bone data (7 values: 4 quaternion + 3 location)
+                start_idx = bone_idx * 7
+
+                # Get quaternion (w, x, y, z)
+                quat = frame_data[start_idx:start_idx+4]
+
+                # Normalize quaternion
+                quat_norm = np.linalg.norm(quat)
+                if quat_norm > 0:
+                    quat = quat / quat_norm
+                else:
+                    quat = np.array([1.0, 0.0, 0.0, 0.0])  # Identity quaternion
+
+                # Get location (x, y, z)
+                location = frame_data[start_idx+4:start_idx+7]
+
+                gestures[bone_name][frame_idx] = {
+                    'rotation_quaternion': tuple(quat),
+                    'location': tuple(location)
+                }
+
+        return gestures
 
     def rule_based_generation(self, audio_features: Dict[str, np.ndarray],
                              fps: int = 24,

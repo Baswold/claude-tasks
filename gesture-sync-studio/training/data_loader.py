@@ -297,15 +297,308 @@ class GestureDataset(data.Dataset):
         """
         Load motion from BVH format.
 
+        BVH (Biovision Hierarchy) is a common motion capture file format.
+        Structure:
+        - HIERARCHY section: Defines skeleton structure
+        - MOTION section: Contains frame data
+
         Args:
             motion_path: Path to BVH file
 
         Returns:
-            Motion array
+            Motion array of shape (time_steps, bone_dim)
+            Each bone has 7 values: 4 (quaternion rotation) + 3 (location)
+
+        Raises:
+            ValueError: If BVH file is malformed
+            FileNotFoundError: If file doesn't exist
         """
-        # TODO: Implement BVH parser
-        # For now, raise not implemented
-        raise NotImplementedError("BVH loading not yet implemented")
+        if not os.path.exists(motion_path):
+            raise FileNotFoundError(f"BVH file not found: {motion_path}")
+
+        try:
+            with open(motion_path, 'r') as f:
+                lines = f.readlines()
+
+            # Parse BVH file
+            hierarchy, motion_data = self._parse_bvh_file(lines)
+
+            # Extract bone information
+            bone_names = hierarchy['bone_names']
+            bone_channels = hierarchy['bone_channels']
+            num_frames = motion_data['num_frames']
+            frame_time = motion_data['frame_time']
+            channel_data = motion_data['channel_data']
+
+            # Convert to our format (quaternions + locations)
+            motion_sequence = self._bvh_to_motion_array(
+                bone_names, bone_channels, channel_data, num_frames
+            )
+
+            logger.info(
+                f"Loaded BVH: {len(bone_names)} bones, {num_frames} frames, "
+                f"{frame_time:.4f}s per frame ({1/frame_time:.1f} FPS)"
+            )
+
+            return motion_sequence
+
+        except Exception as e:
+            logger.error(f"Failed to parse BVH file {motion_path}: {e}")
+            raise ValueError(f"Failed to parse BVH file: {e}")
+
+    def _parse_bvh_file(self, lines: List[str]) -> Tuple[Dict, Dict]:
+        """
+        Parse BVH file into hierarchy and motion sections.
+
+        Args:
+            lines: Lines from BVH file
+
+        Returns:
+            Tuple of (hierarchy_dict, motion_dict)
+        """
+        # Find section boundaries
+        hierarchy_start = -1
+        motion_start = -1
+
+        for i, line in enumerate(lines):
+            if line.strip().startswith('HIERARCHY'):
+                hierarchy_start = i
+            elif line.strip().startswith('MOTION'):
+                motion_start = i
+                break
+
+        if hierarchy_start == -1 or motion_start == -1:
+            raise ValueError("Invalid BVH file: missing HIERARCHY or MOTION section")
+
+        # Parse hierarchy
+        hierarchy_lines = lines[hierarchy_start:motion_start]
+        hierarchy = self._parse_bvh_hierarchy(hierarchy_lines)
+
+        # Parse motion
+        motion_lines = lines[motion_start:]
+        motion_data = self._parse_bvh_motion(motion_lines, hierarchy)
+
+        return hierarchy, motion_data
+
+    def _parse_bvh_hierarchy(self, lines: List[str]) -> Dict:
+        """
+        Parse BVH HIERARCHY section.
+
+        Args:
+            lines: Lines from HIERARCHY section
+
+        Returns:
+            Dictionary with bone information
+        """
+        bone_names = []
+        bone_channels = {}
+        bone_parents = {}
+        bone_offsets = {}
+
+        current_bone = None
+        parent_stack = []
+
+        for line in lines:
+            stripped = line.strip()
+
+            # Parse bone declarations
+            if stripped.startswith('ROOT') or stripped.startswith('JOINT'):
+                parts = stripped.split()
+                if len(parts) >= 2:
+                    bone_name = parts[1]
+                    bone_names.append(bone_name)
+                    current_bone = bone_name
+
+                    if parent_stack:
+                        bone_parents[bone_name] = parent_stack[-1]
+                    else:
+                        bone_parents[bone_name] = None
+
+                    parent_stack.append(bone_name)
+
+            # Parse offsets
+            elif stripped.startswith('OFFSET'):
+                parts = stripped.split()
+                if len(parts) >= 4 and current_bone:
+                    offset = [float(parts[1]), float(parts[2]), float(parts[3])]
+                    bone_offsets[current_bone] = offset
+
+            # Parse channels
+            elif stripped.startswith('CHANNELS'):
+                parts = stripped.split()
+                if len(parts) >= 2 and current_bone:
+                    num_channels = int(parts[1])
+                    channels = parts[2:2+num_channels]
+                    bone_channels[current_bone] = channels
+
+            # Handle end of bone
+            elif stripped.startswith('}'):
+                if parent_stack:
+                    parent_stack.pop()
+
+        return {
+            'bone_names': bone_names,
+            'bone_channels': bone_channels,
+            'bone_parents': bone_parents,
+            'bone_offsets': bone_offsets
+        }
+
+    def _parse_bvh_motion(self, lines: List[str], hierarchy: Dict) -> Dict:
+        """
+        Parse BVH MOTION section.
+
+        Args:
+            lines: Lines from MOTION section
+            hierarchy: Parsed hierarchy information
+
+        Returns:
+            Dictionary with motion data
+        """
+        num_frames = 0
+        frame_time = 0.0
+        channel_data = []
+
+        reading_frames = False
+
+        for line in lines:
+            stripped = line.strip()
+
+            if stripped.startswith('Frames:'):
+                num_frames = int(stripped.split()[1])
+
+            elif stripped.startswith('Frame Time:'):
+                frame_time = float(stripped.split()[2])
+
+            elif stripped and not stripped.startswith('MOTION'):
+                # This is frame data
+                try:
+                    frame_values = [float(x) for x in stripped.split()]
+                    channel_data.append(frame_values)
+                except ValueError:
+                    # Skip invalid lines
+                    continue
+
+        return {
+            'num_frames': num_frames,
+            'frame_time': frame_time,
+            'channel_data': np.array(channel_data) if channel_data else np.array([])
+        }
+
+    def _bvh_to_motion_array(
+        self,
+        bone_names: List[str],
+        bone_channels: Dict[str, List[str]],
+        channel_data: np.ndarray,
+        num_frames: int
+    ) -> np.ndarray:
+        """
+        Convert BVH channel data to motion array format.
+
+        Args:
+            bone_names: List of bone names
+            bone_channels: Dictionary mapping bones to their channels
+            channel_data: Raw channel data from BVH
+            num_frames: Number of frames
+
+        Returns:
+            Motion array of shape (num_frames, bone_dim)
+            bone_dim = num_bones * 7 (4 quaternion + 3 location)
+        """
+        num_bones = len(bone_names)
+        bone_dim = num_bones * 7
+        motion_array = np.zeros((num_frames, bone_dim))
+
+        # Build channel index mapping
+        channel_idx = 0
+        bone_channel_indices = {}
+
+        for bone_name in bone_names:
+            channels = bone_channels.get(bone_name, [])
+            bone_channel_indices[bone_name] = {
+                'start': channel_idx,
+                'channels': channels
+            }
+            channel_idx += len(channels)
+
+        # Convert frame by frame
+        for frame_idx in range(min(num_frames, len(channel_data))):
+            frame_data = channel_data[frame_idx]
+
+            for bone_idx, bone_name in enumerate(bone_names):
+                if bone_name not in bone_channel_indices:
+                    continue
+
+                bone_info = bone_channel_indices[bone_name]
+                start_idx = bone_info['start']
+                channels = bone_info['channels']
+
+                # Extract channel values
+                position = [0.0, 0.0, 0.0]
+                rotation_euler = [0.0, 0.0, 0.0]  # XYZ Euler angles in degrees
+
+                for i, channel in enumerate(channels):
+                    if start_idx + i >= len(frame_data):
+                        break
+
+                    value = frame_data[start_idx + i]
+
+                    # Position channels
+                    if channel == 'Xposition':
+                        position[0] = value
+                    elif channel == 'Yposition':
+                        position[1] = value
+                    elif channel == 'Zposition':
+                        position[2] = value
+
+                    # Rotation channels (typically in ZXY order for BVH)
+                    elif channel == 'Xrotation':
+                        rotation_euler[0] = value
+                    elif channel == 'Yrotation':
+                        rotation_euler[1] = value
+                    elif channel == 'Zrotation':
+                        rotation_euler[2] = value
+
+                # Convert Euler angles to quaternion
+                quaternion = self._euler_to_quaternion(
+                    np.radians(rotation_euler[0]),
+                    np.radians(rotation_euler[1]),
+                    np.radians(rotation_euler[2])
+                )
+
+                # Store in motion array
+                base_idx = bone_idx * 7
+                motion_array[frame_idx, base_idx:base_idx+4] = quaternion
+                motion_array[frame_idx, base_idx+4:base_idx+7] = position
+
+        return motion_array
+
+    def _euler_to_quaternion(self, x: float, y: float, z: float) -> np.ndarray:
+        """
+        Convert Euler angles (XYZ order) to quaternion.
+
+        Args:
+            x: Rotation around X axis (radians)
+            y: Rotation around Y axis (radians)
+            z: Rotation around Z axis (radians)
+
+        Returns:
+            Quaternion as numpy array [w, x, y, z]
+        """
+        # Compute half angles
+        cx = np.cos(x * 0.5)
+        sx = np.sin(x * 0.5)
+        cy = np.cos(y * 0.5)
+        sy = np.sin(y * 0.5)
+        cz = np.cos(z * 0.5)
+        sz = np.sin(z * 0.5)
+
+        # Quaternion multiplication for XYZ order
+        w = cx * cy * cz + sx * sy * sz
+        qx = sx * cy * cz - cx * sy * sz
+        qy = cx * sy * cz + sx * cy * sz
+        qz = cx * cy * sz - sx * sy * cz
+
+        return np.array([w, qx, qy, qz])
 
     def _align_sequences(
         self,
